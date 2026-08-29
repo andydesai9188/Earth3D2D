@@ -1,0 +1,658 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>God's Eye Recon Suite // Live Orbital Recon & Strike System</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            user-select: none;
+        }
+
+        body, html {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #010408;
+            font-family: 'Segoe UI', Monaco, 'Courier New', monospace;
+            color: #00f3ff;
+        }
+
+        #canvas-container {
+            width: 100vw;
+            height: 100vh;
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 1;
+        }
+
+        #map-overlay {
+            width: 100vw;
+            height: 100vh;
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 2;
+            display: none;
+            border: 2px solid #00f3ff;
+        }
+
+        /* --- HUD PANELS & OVERLAYS --- */
+        .hud-panel {
+            position: absolute;
+            background: rgba(4, 14, 26, 0.92);
+            border: 1px solid #00f3ff;
+            box-shadow: 0 0 25px rgba(0, 243, 255, 0.3);
+            backdrop-filter: blur(10px);
+            border-radius: 4px;
+            z-index: 10;
+        }
+
+        #telemetry-hud {
+            top: 20px;
+            left: 20px;
+            width: 320px;
+            padding: 18px;
+        }
+
+        #controls-hud {
+            top: 20px;
+            right: 20px;
+            width: 320px;
+            padding: 18px;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+
+        #bottom-hud {
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 12px 24px;
+            display: flex;
+            gap: 20px;
+            align-items: center;
+        }
+
+        h2 {
+            font-size: 13px;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            border-bottom: 1px solid rgba(0, 243, 255, 0.4);
+            padding-bottom: 6px;
+            margin-bottom: 12px;
+            color: #ffffff;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .hud-row {
+            display: flex;
+            justify-content: space-between;
+            margin: 8px 0;
+            font-size: 12px;
+        }
+
+        .hud-label {
+            color: #88aacc;
+        }
+
+        .hud-val {
+            color: #ffffff;
+            font-weight: bold;
+        }
+
+        .hud-btn {
+            background: rgba(0, 243, 255, 0.15);
+            border: 1px solid #00f3ff;
+            color: #00f3ff;
+            padding: 10px 14px;
+            width: 100%;
+            margin-top: 8px;
+            font-family: inherit;
+            font-size: 11px;
+            font-weight: bold;
+            letter-spacing: 1px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            text-transform: uppercase;
+        }
+
+        .hud-btn:hover {
+            background: #00f3ff;
+            color: #020205;
+            box-shadow: 0 0 15px #00f3ff;
+        }
+
+        .hud-btn.active {
+            background: #ff0055;
+            border-color: #ff0055;
+            color: #ffffff;
+            box-shadow: 0 0 15px #ff0055;
+        }
+
+        .hud-btn.export {
+            background: rgba(0, 255, 102, 0.15);
+            border-color: #00ff66;
+            color: #00ff66;
+        }
+
+        .hud-btn.export:hover {
+            background: #00ff66;
+            color: #000;
+            box-shadow: 0 0 15px #00ff66;
+        }
+
+        select.hud-select {
+            background: rgba(4, 14, 26, 0.95);
+            border: 1px solid #00f3ff;
+            color: #00f3ff;
+            padding: 8px;
+            width: 100%;
+            font-family: inherit;
+            margin-top: 4px;
+            margin-bottom: 10px;
+            outline: none;
+            font-size: 12px;
+        }
+
+        /* --- COMPACT TACTICAL CROSSHAIR (NO CIRCLE, SMALLER) --- */
+        #crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 24px;
+            height: 24px;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            z-index: 5;
+            opacity: 0.85;
+        }
+
+        #crosshair::before, #crosshair::after {
+            content: '';
+            position: absolute;
+            background: #ff0055;
+            box-shadow: 0 0 4px #ff0055;
+        }
+
+        #crosshair::before { top: 0; left: 11px; width: 2px; height: 24px; }
+        #crosshair::after { top: 11px; left: 0; width: 24px; height: 2px; }
+
+        .status-badge {
+            font-size: 10px;
+            padding: 2px 6px;
+            border-radius: 3px;
+            background: #00f3ff;
+            color: #000;
+            font-weight: bold;
+        }
+
+        .status-badge.live {
+            background: #00ff66;
+            box-shadow: 0 0 10px #00ff66;
+        }
+
+        iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+    </style>
+
+    <!-- Essential Libraries: Three.js, OrbitControls, GLTFExporter -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/exporters/GLTFExporter.js"></script>
+</head>
+<body>
+
+    <!-- SMALL TACTICAL CROSSHAIR -->
+    <div id="crosshair"></div>
+
+    <!-- 3D GLOBE CONTAINER -->
+    <div id="canvas-container"></div>
+
+    <!-- HIGH-RES TILE MAP CONTAINER (COLOR SATELLITE & STREET VIEW) -->
+    <div id="map-overlay">
+        <iframe id="map-frame" src=""></iframe>
+    </div>
+
+    <!-- LEFT TELEMETRY HUD -->
+    <div id="telemetry-hud" class="hud-panel">
+        <h2>RECON & STRIKE <span class="status-badge live">READY</span></h2>
+        <div class="hud-row"><span class="hud-label">SYSTEM LIGHTING:</span><span class="hud-val">360° FULL OMNI</span></div>
+        <div class="hud-row"><span class="hud-label">STRIKE MODE:</span><span class="hud-val" style="color:#ff0055;">DOUBLE-CLICK TO FIRE</span></div>
+        <div class="hud-row"><span class="hud-label">TARGET LAT:</span><span class="hud-val" id="val-lat">18.5204° N</span></div>
+        <div class="hud-row"><span class="hud-label">TARGET LON:</span><span class="hud-val" id="val-lon">73.8567° E</span></div>
+        <div class="hud-row"><span class="hud-label">ACTIVE MISSILES:</span><span class="hud-val" id="val-missiles">0</span></div>
+        <div class="hud-row"><span class="hud-label">VIEW MODE:</span><span class="hud-val" id="val-mode">3D GLOBE OVERVIEW</span></div>
+    </div>
+
+    <!-- RIGHT CONTROLS HUD -->
+    <div id="controls-hud" class="hud-panel">
+        <h2>RECON COMMAND & CONTROL</h2>
+
+        <label for="city-select" style="font-size:11px; color:#88aacc;">GROUND CITY TARGET:</label>
+        <select id="city-select" class="hud-select" onchange="jumpToCity(this.value)">
+            <option value="pune">Pune, India</option>
+            <option value="tokyo">Tokyo, Japan</option>
+            <option value="ny">New York, USA</option>
+            <option value="london">London, UK</option>
+            <option value="dubai">Dubai, UAE</option>
+        </select>
+
+        <label for="globe-style-select" style="font-size:11px; color:#88aacc;">3D GLOBE MAP STYLE:</label>
+        <select id="globe-style-select" class="hud-select" onchange="changeGlobeStyle(this.value)">
+            <option value="satellite">Satellite Color Imagery</option>
+            <option value="street">Normal Map</option>
+            <option value="hybrid">Topology Grid</option>
+        </select>
+
+        <label for="street-style-select" style="font-size:11px; color:#88aacc;">2D RECON MAP STYLE:</label>
+        <select id="street-style-select" class="hud-select" onchange="changeStreetStyle(this.value)">
+            <option value="satellite">Satellite Full Color</option>
+            <option value="street">Normal Vector Street</option>
+            <option value="hybrid">Hybrid Labels & Imagery</option>
+        </select>
+
+        <button id="street-btn" class="hud-btn" onclick="toggleStreetSatelliteView()">SWITCH TO HIGH-RES COLOR AERIAL MAP</button>
+        <button class="hud-btn export" onclick="exportGLBModel()">EXPORT EARTH MODEL ONLY (.GLB)</button>
+        <button class="hud-btn" onclick="resetToGlobalView()">RESET ORBITAL VIEW</button>
+    </div>
+
+    <!-- BOTTOM HUD -->
+    <div id="bottom-hud" class="hud-panel">
+        <span style="font-size:11px; color:#88aacc;">COMMAND ENGINE:</span>
+        <span style="font-size:11px; color:#fff;">[DOUBLE-CLICK] LAUNCH MISSILE | [DRAG] ROTATE | [SCROLL] ZOOM</span>
+    </div>
+
+    <script>
+        const LOCATIONS = {
+            pune:   { lat: 18.5204, lon: 73.8567, name: "Pune, India" },
+            tokyo:  { lat: 35.6762, lon: 139.6503, name: "Tokyo, Japan" },
+            ny:     { lat: 40.7128, lon: -74.0060, name: "New York, USA" },
+            london: { lat: 51.5074, lon: -0.1278,  name: "London, UK" },
+            dubai:  { lat: 25.2048, lon: 55.2708,  name: "Dubai, UAE" }
+        };
+
+        const GLOBE_TEXTURES = {
+            satellite: 'https://unpkg.com/three-globe/example/img/earth-blue-marble.jpg',
+            street: 'https://unpkg.com/three-globe/example/img/earth-day.jpg',
+            hybrid: 'https://unpkg.com/three-globe/example/img/earth-topology.png'
+        };
+
+        let currentTarget = LOCATIONS.pune;
+        let isStreetView = false;
+        let currentStreetStyle = "satellite";
+        const EARTH_RADIUS = 20;
+
+        const activeMissiles = [];
+        const activeExplosions = [];
+
+        // ====================================================================
+        // THREE.JS SCENE SETUP
+        // ====================================================================
+        const container = document.getElementById('canvas-container');
+        const scene = new THREE.Scene();
+        scene.fog = new THREE.FogExp2(0x010408, 0.0015);
+
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 2000);
+        camera.position.set(0, 35, 65);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        container.appendChild(renderer.domElement);
+
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+
+        // 360-degree omni lighting
+        scene.add(new THREE.AmbientLight(0xffffff, 1.6));
+        const sun1 = new THREE.DirectionalLight(0xffffff, 1.2);
+        sun1.position.set(100, 100, 100);
+        scene.add(sun1);
+        const sun2 = new THREE.DirectionalLight(0xffffff, 1.2);
+        sun2.position.set(-100, -100, -100);
+        scene.add(sun2);
+
+        // ====================================================================
+        // EARTH GLOBE MESH
+        // ====================================================================
+        const textureLoader = new THREE.TextureLoader();
+        const earthGeo = new THREE.SphereGeometry(EARTH_RADIUS, 128, 128);
+        
+        const earthMat = new THREE.MeshStandardMaterial({
+            map: textureLoader.load(GLOBE_TEXTURES.satellite),
+            bumpMap: textureLoader.load('https://unpkg.com/three-globe/example/img/earth-topology.png'),
+            bumpScale: 0.1,
+            roughness: 0.6,
+            metalness: 0.1
+        });
+
+        const earthMesh = new THREE.Mesh(earthGeo, earthMat);
+        earthMesh.name = "EarthGlobeOnly";
+        scene.add(earthMesh);
+
+        // Atmosphere Glow
+        const atmosGeo = new THREE.SphereGeometry(EARTH_RADIUS + 0.3, 64, 64);
+        const atmosMat = new THREE.MeshBasicMaterial({ color: 0x00f3ff, transparent: true, opacity: 0.12, wireframe: true });
+        scene.add(new THREE.Mesh(atmosGeo, atmosMat));
+
+        // Raycaster for mouse missile target calculation
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+
+        // ====================================================================
+        // MISSILE & SLOW EXPLOSION SYSTEM
+        // ====================================================================
+        function launchMissile(targetVector) {
+            // Spawn point high above the earth surface
+            const startVector = targetVector.clone().normalize().multiplyScalar(EARTH_RADIUS + 35);
+            
+            // Curve mid-point arc
+            const midVector = startVector.clone().add(targetVector).multiplyScalar(0.55).normalize().multiplyScalar(EARTH_RADIUS + 18);
+            const curve = new THREE.QuadraticBezierCurve3(startVector, midVector, targetVector);
+
+            // Missile Mesh
+            const missileGroup = new THREE.Group();
+            const bodyGeo = new THREE.CylinderGeometry(0.12, 0.25, 2.2, 16);
+            const bodyMat = new THREE.MeshStandardMaterial({ color: 0xff0055, metalness: 0.8, roughness: 0.2 });
+            const bodyMesh = new THREE.Mesh(bodyGeo, bodyMat);
+            bodyMesh.rotation.x = Math.PI / 2;
+            missileGroup.add(bodyMesh);
+
+            // Engine Trail Glow
+            const trailGeo = new THREE.ConeGeometry(0.3, 1.8, 16);
+            const trailMat = new THREE.MeshBasicMaterial({ color: 0xffaa00, transparent: true, opacity: 0.9 });
+            const trailMesh = new THREE.Mesh(trailGeo, trailMat);
+            trailMesh.position.z = 1.6;
+            trailMesh.rotation.x = -Math.PI / 2;
+            missileGroup.add(trailMesh);
+
+            scene.add(missileGroup);
+
+            activeMissiles.push({
+                mesh: missileGroup,
+                curve: curve,
+                progress: 0,
+                target: targetVector.clone()
+            });
+
+            document.getElementById('val-missiles').innerText = activeMissiles.length;
+        }
+
+        function createSlowExplosion(position) {
+            const group = new THREE.Group();
+            group.position.copy(position);
+
+            // Core Shockwave Sphere
+            const shockGeo = new THREE.SphereGeometry(0.4, 32, 32);
+            const shockMat = new THREE.MeshBasicMaterial({ color: 0xff3300, transparent: true, opacity: 0.85 });
+            const shockMesh = new THREE.Mesh(shockGeo, shockMat);
+            group.add(shockMesh);
+
+            // Expanding Debris Field
+            const particleCount = 60;
+            const particlesGeo = new THREE.BufferGeometry();
+            const positions = new Float32Array(particleCount * 3);
+            const velocities = [];
+
+            for (let i = 0; i < particleCount; i++) {
+                positions[i * 3] = 0;
+                positions[i * 3 + 1] = 0;
+                positions[i * 3 + 2] = 0;
+
+                const dir = new THREE.Vector3(
+                    (Math.random() - 0.5) * 2,
+                    (Math.random() - 0.5) * 2,
+                    (Math.random() - 0.5) * 2
+                ).normalize().multiplyScalar(0.04 + Math.random() * 0.08);
+
+                velocities.push(dir);
+            }
+
+            particlesGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            const particlesMat = new THREE.PointsMaterial({ color: 0xffcc00, size: 0.4, transparent: true, opacity: 1 });
+            const particleSystem = new THREE.Points(particlesGeo, particlesMat);
+            group.add(particleSystem);
+
+            scene.add(group);
+
+            activeExplosions.push({
+                group: group,
+                shockMesh: shockMesh,
+                particleSystem: particleSystem,
+                velocities: velocities,
+                age: 0,
+                maxAge: 160 // Duration of explosion
+            });
+        }
+
+        // Double-click triggers missile launch
+        window.addEventListener('dblclick', (event) => {
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+            raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObject(earthMesh);
+
+            if (intersects.length > 0) {
+                const hitPoint = intersects[0].point;
+                launchMissile(hitPoint);
+                
+                // Update Lat/Lon telemetry
+                const latLon = vector3ToLatLon(hitPoint);
+                document.getElementById('val-lat').innerText = latLon.lat.toFixed(4) + "° N";
+                document.getElementById('val-lon').innerText = latLon.lon.toFixed(4) + "° E";
+            }
+        });
+
+        function vector3ToLatLon(vec) {
+            const radius = vec.length();
+            const phi = Math.acos(vec.y / radius);
+            const theta = (Math.atan2(vec.z, -vec.x) + Math.PI);
+            const lat = 90 - (phi * 180 / Math.PI);
+            const lon = (theta * 180 / Math.PI) - 180;
+            return { lat, lon };
+        }
+
+        function latLonToVector3(lat, lon, radius) {
+            const phi = (90 - lat) * (Math.PI / 180);
+            const theta = (lon + 180) * (Math.PI / 180);
+            return new THREE.Vector3(
+                -(radius * Math.sin(phi) * Math.cos(theta)),
+                (radius * Math.cos(phi)),
+                (radius * Math.sin(phi) * Math.sin(theta))
+            );
+        }
+
+        // ====================================================================
+        // DYNAMIC MAP & GLB EXPORTER PIPELINE
+        // ====================================================================
+        function exportGLBModel() {
+            const exporter = new THREE.GLTFExporter();
+            
+            // Clone Earth to ensure ONLY Earth + textures are exported
+            const exportEarth = earthMesh.clone();
+
+            exporter.parse(
+                exportEarth,
+                function (gltf) {
+                    const blob = new Blob([gltf], { type: 'application/octet-stream' });
+                    const link = document.createElement('a');
+                    link.href = URL.createObjectURL(blob);
+                    link.download = `Earth_Globe_Model_${Date.now()}.glb`;
+                    link.click();
+                },
+                function (error) {
+                    console.error('An error occurred during GLB export:', error);
+                },
+                { binary: true }
+            );
+        }
+
+        function changeGlobeStyle(styleKey) {
+            const url = GLOBE_TEXTURES[styleKey] || GLOBE_TEXTURES.satellite;
+            textureLoader.load(url, (tex) => {
+                earthMat.map = tex;
+                earthMat.needsUpdate = true;
+            });
+        }
+
+        function changeStreetStyle(styleKey) {
+            currentStreetStyle = styleKey;
+            if (isStreetView) {
+                updateStreetViewMap(currentTarget.lat, currentTarget.lon);
+            }
+        }
+
+        function updateStreetViewMap(lat, lon) {
+            const iframe = document.getElementById('map-frame');
+            
+            // Full-color High-Res Aerial Map rendering
+            if (currentStreetStyle === 'satellite' || currentStreetStyle === 'hybrid') {
+                iframe.src = `https://www.google.com/maps/embed?pb=!1m14!1m12!1m3!1d30000!2d${lon}!3d${lat}!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!5e1!3m2!1sen!2s!4v1`;
+            } else {
+                iframe.src = `https://www.openstreetmap.org/export/embed.html?bbox=${lon-0.02}%2C${lat-0.02}%2C${lon+0.02}%2C${lat+0.02}&layer=mapnik&marker=${lat}%2C${lon}`;
+            }
+        }
+
+        function jumpToCity(cityKey) {
+            const loc = LOCATIONS[cityKey];
+            if (!loc) return;
+            currentTarget = loc;
+
+            if (isStreetView) {
+                updateStreetViewMap(loc.lat, loc.lon);
+            } else {
+                const targetPos = latLonToVector3(loc.lat, loc.lon, EARTH_RADIUS);
+                const camPos = targetPos.clone().multiplyScalar(1.5);
+                animateCameraFly(camPos, targetPos);
+            }
+
+            document.getElementById('val-lat').innerText = loc.lat.toFixed(4) + "° N";
+            document.getElementById('val-lon').innerText = loc.lon.toFixed(4) + "° E";
+        }
+
+        function animateCameraFly(newCamPos, newLookTarget) {
+            const startCamPos = camera.position.clone();
+            const startTarget = controls.target.clone();
+            let progress = 0;
+
+            function stepFly() {
+                progress += 0.04;
+                if (progress <= 1.0) {
+                    camera.position.lerpVectors(startCamPos, newCamPos, progress);
+                    controls.target.lerpVectors(startTarget, newLookTarget, progress);
+                    controls.update();
+                    requestAnimationFrame(stepFly);
+                }
+            }
+            stepFly();
+        }
+
+        function toggleStreetSatelliteView() {
+            isStreetView = !isStreetView;
+            const mapOverlay = document.getElementById('map-overlay');
+            const btn = document.getElementById('street-btn');
+            const modeVal = document.getElementById('val-mode');
+
+            if (isStreetView) {
+                mapOverlay.style.display = 'block';
+                btn.classList.add('active');
+                btn.innerText = "RETURN TO 3D GLOBE OVERVIEW";
+                modeVal.innerText = "HIGH-RES AERIAL COLOR TILES";
+                updateStreetViewMap(currentTarget.lat, currentTarget.lon);
+            } else {
+                mapOverlay.style.display = 'none';
+                btn.classList.remove('active');
+                btn.innerText = "SWITCH TO HIGH-RES COLOR AERIAL MAP";
+                modeVal.innerText = "3D GLOBE OVERVIEW";
+            }
+        }
+
+        function resetToGlobalView() {
+            if (isStreetView) toggleStreetSatelliteView();
+            animateCameraFly(new THREE.Vector3(0, 35, 65), new THREE.Vector3(0, 0, 0));
+        }
+
+        // ====================================================================
+        // ANIMATION & PHYSICS TICK LOOP
+        // ====================================================================
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // Gentle Earth Rotation
+            earthMesh.rotation.y += 0.0003;
+
+            // --- Missile Guidance Update ---
+            for (let i = activeMissiles.length - 1; i >= 0; i--) {
+                const m = activeMissiles[i];
+                m.progress += 0.012; // Speed of missile travel
+
+                if (m.progress >= 1.0) {
+                    // Detonation on target
+                    createSlowExplosion(m.target);
+                    scene.remove(m.mesh);
+                    activeMissiles.splice(i, 1);
+                } else {
+                    const currentPos = m.curve.getPoint(m.progress);
+                    const nextPos = m.curve.getPoint(Math.min(1.0, m.progress + 0.01));
+                    
+                    m.mesh.position.copy(currentPos);
+                    m.mesh.lookAt(nextPos);
+                }
+            }
+
+            document.getElementById('val-missiles').innerText = activeMissiles.length;
+
+            // --- Slow Explosion FX Update ---
+            for (let i = activeExplosions.length - 1; i >= 0; i--) {
+                const exp = activeExplosions[i];
+                exp.age += 1;
+
+                // Slow sphere expansion
+                const scale = 1 + (exp.age * 0.06);
+                exp.shockMesh.scale.set(scale, scale, scale);
+                exp.shockMesh.material.opacity = 1 - (exp.age / exp.maxAge);
+
+                // Expand Debris Particles
+                const positions = exp.particleSystem.geometry.attributes.position.array;
+                for (let p = 0; p < exp.velocities.length; p++) {
+                    positions[p * 3] += exp.velocities[p].x;
+                    positions[p * 3 + 1] += exp.velocities[p].y;
+                    positions[p * 3 + 2] += exp.velocities[p].z;
+                }
+                exp.particleSystem.geometry.attributes.position.needsUpdate = true;
+                exp.particleSystem.material.opacity = 1 - (exp.age / exp.maxAge);
+
+                if (exp.age >= exp.maxAge) {
+                    scene.remove(exp.group);
+                    activeExplosions.splice(i, 1);
+                }
+            }
+
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // Initialize Suite
+        animate();
+    </script>
+</body>
+</html>
